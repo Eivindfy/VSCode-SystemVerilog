@@ -8,6 +8,7 @@ import { SystemVerilogDefinitionProvider } from './providers/DefintionProvider';
 import { SystemVerilogDocumentSymbolProvider } from './providers/DocumentSymbolProvider';
 import { SystemVerilogHoverProvider } from './providers/HoverProvider';
 import { SystemVerilogWorkspaceSymbolProvider } from './providers/WorkspaceSymbolProvider';
+import { SystemVerilogCompletionItemProvider } from './providers/CompletionItemProvider';
 
 
 // this method is called when your extension is activated
@@ -31,6 +32,7 @@ export function activate(context: ExtensionContext) {
         settings.get('systemverilog.parallelProcessing'));
     let defProvider = new SystemVerilogDefinitionProvider(symProvider, docProvider);
     let hoverProvider = new SystemVerilogHoverProvider(symProvider, docProvider);
+    let completionItemProvider = new SystemVerilogCompletionItemProvider();
 
     context.subscriptions.push(statusBar);
     context.subscriptions.push(languages.registerDocumentSymbolProvider(selector, docProvider));
@@ -38,6 +40,7 @@ export function activate(context: ExtensionContext) {
     context.subscriptions.push(languages.registerHoverProvider(selector, hoverProvider));
     context.subscriptions.push(languages.registerWorkspaceSymbolProvider(symProvider));
     context.subscriptions.push(commands.registerCommand('systemverilog.build_index', rebuild));
+    context.subscriptions.push(languages.registerCompletionItemProvider(selector, completionItemProvider, "\r"));
     // WIP
     // window.registerTreeDataProvider('systemverilogModules', new SystemVerilogTreeDataProvider())
     // window.registerTreeDataProvider('systemverilogDocuementSymbols', new SystemVerilogDocumentSymbolTreeProvider())
