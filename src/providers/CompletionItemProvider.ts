@@ -36,7 +36,6 @@ export class SystemVerilogCompletionItemProvider implements vscode.CompletionIte
                         completionItems.push(this.constructModuleItem(value));
 
                     }
-                    console.log(value.name);
                 }, completionItems);
                 resolve(completionItems);
             });
@@ -48,7 +47,7 @@ export class SystemVerilogCompletionItemProvider implements vscode.CompletionIte
     constructModuleItem(symbol: vscode.SymbolInformation): vscode.CompletionItem {
         var completionItem = new vscode.CompletionItem(symbol.name, vscode.CompletionItemKind.Module);
         completionItem.filterText = symbol.name;
-        completionItem.insertText = "tst";
+        completionItem.insertText = symbol.containerName;
 
 
         return completionItem;
@@ -56,7 +55,9 @@ export class SystemVerilogCompletionItemProvider implements vscode.CompletionIte
 
     resolveCompletionItem(item:vscode.CompletionItem, token:vscode.CancellationToken): vscode.CompletionItem {
 
-
+        var descMarkdownString = new vscode.MarkdownString();
+        descMarkdownString.appendCodeblock(this.workspaceSymProvider.modules[item.label+item.insertText].toString(), "systemverilog");
+        item.documentation = descMarkdownString;
 
         item.insertText = this.createModuleInsertionText(item);
         return item;
@@ -66,7 +67,7 @@ export class SystemVerilogCompletionItemProvider implements vscode.CompletionIte
 
     createModuleInsertionText(item: vscode.CompletionItem) : string {
 
-        var rawText = this.workspaceSymProvider.modules[item.label];
+        var rawText = this.workspaceSymProvider.modules[item.label+item.insertText];
         var text = rawText.replace(/\/\*[\s\S]*?\*\/|([\\:]|^)\/\/.*$/gm, '');
         var hasParameters = 0;
         var parameters = [];

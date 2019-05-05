@@ -151,7 +151,7 @@ export class SystemVerilogWorkspaceSymbolProvider implements WorkspaceSymbolProv
         }
 
         var range = new Range(startPoint, endPoint);
-        this.modules[name.toString()] = doc.getText(range);
+        this.modules[name.toString() + doc.fileName] = doc.getText(range);
 
     }
 }
