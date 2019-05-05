@@ -59,7 +59,7 @@ export class SystemVerilogCompletionItemProvider implements vscode.CompletionIte
         descMarkdownString.appendCodeblock(this.workspaceSymProvider.modules[item.label+item.insertText].toString(), "systemverilog");
         item.documentation = descMarkdownString;
 
-        item.insertText = this.createModuleInsertionText(item);
+        item.insertText = new vscode.SnippetString(this.createModuleInsertionText(item));
         return item;
     };
 
@@ -72,6 +72,7 @@ export class SystemVerilogCompletionItemProvider implements vscode.CompletionIte
         var hasParameters = 0;
         var parameters = [];
         var insertText = "";
+        var tabstopCnt = 2;
 
         if (text.indexOf("#") > -1){
             hasParameters = 1;
@@ -103,17 +104,19 @@ export class SystemVerilogCompletionItemProvider implements vscode.CompletionIte
                 if (i != 0){
                     insertText = insertText + ",\n";
                 }
-                insertText = insertText + "\t." + parameters[i] + "()";
+                insertText = insertText + "\t." + parameters[i] + "($" + tabstopCnt.toString() + ")";
+                tabstopCnt++;
             }
             insertText = insertText + "\n)";
         }
         
-        insertText = insertText + "  __NAME__  (\n";
+        insertText = insertText + "  $1 (\n";
         for(var i = 0; i < signals.length; i++ ){
             if (i != 0){
                 insertText = insertText + ",\n";
             }
-            insertText = insertText + "\t." + signals[i] + "()";
+            insertText = insertText + "\t." + signals[i] + "($" + tabstopCnt.toString() + ")";
+            tabstopCnt++;
         }
         insertText = insertText + "\n);";
         return insertText;
