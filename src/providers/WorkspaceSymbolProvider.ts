@@ -1,4 +1,4 @@
-import { SymbolInformation, Location, Range, WorkspaceSymbolProvider, CancellationToken, workspace, Uri, window, StatusBarItem, ProgressLocation, GlobPattern} from 'vscode';
+import { SymbolInformation, Location, Range, WorkspaceSymbolProvider, CancellationToken, workspace, Uri, window, StatusBarItem, ProgressLocation, GlobPattern, SymbolKind, TextDocument, Position} from 'vscode';
 import { getSymbolKind } from './DocumentSymbolProvider';
 
 export class SystemVerilogWorkspaceSymbolProvider implements WorkspaceSymbolProvider {
@@ -11,6 +11,9 @@ export class SystemVerilogWorkspaceSymbolProvider implements WorkspaceSymbolProv
     public NUM_FILES: number = 250;
     public parallelProcessing = 100;
     public exclude: GlobPattern = undefined;
+    public modules: { [id: string] : String; }= {};
+
+
     
 
     constructor(statusbar: StatusBarItem, disabled?: Boolean, exclude?: GlobPattern, parallelProcessing?: number) {
@@ -93,12 +96,16 @@ export class SystemVerilogWorkspaceSymbolProvider implements WorkspaceSymbolProv
                     let line = doc.lineAt(linenr);
                     let match = this.regex.exec(line.text);
                     if (match) {
+                        var symbolLocation =new Location(doc.uri,
+                                                         new Range(
+                                                                   linenr, line.text.indexOf(match[2]),
+                                                                   linenr, line.text.indexOf(match[2])+match[2].length));
+
                         this.symbols.push( new SymbolInformation(
-                            match[2], getSymbolKind(match[1]), doc.fileName,
-                            new Location(doc.uri,
-                                new Range(
-                                    linenr, line.text.indexOf(match[2]),
-                                    linenr, line.text.indexOf(match[2])+match[2].length))));
+                            match[2], getSymbolKind(match[1]), doc.fileName, symbolLocation ));
+                        if(getSymbolKind(match[1]) == SymbolKind.Module){
+                            this.buildModuleInformation(match[2], symbolLocation, doc);
+                        }
                     }
                 }
                 resolve();
@@ -107,5 +114,44 @@ export class SystemVerilogWorkspaceSymbolProvider implements WorkspaceSymbolProv
                 resolve();
             });
         });
+    }
+
+    private buildModuleInformation(name: String, location: Location, doc : TextDocument){
+
+        var startPoint = new Position(location.range.start.line, doc.lineAt(location.range.start).firstNonWhitespaceCharacterIndex);
+        
+
+        // Getting the endpoint of the module instantiation, includes the Name, the parameter list and the signal interface
+        var docSize = doc.lineCount;
+        var multiLineComment = 0;
+        var endPoint = location.range.end; 
+        for( var i = location.range.end.line; i < docSize; i++){
+            var line = doc.lineAt(i).text.toString();
+            // Removing comments 
+            line = line.replace(/\/\*[\s\S]*?\*\/|([\\:]|^)\/\/.*$/gm, '*/');
+            if (multiLineComment && line.indexOf("*/") > -1){
+                line = line.slice(line.indexOf("*/"), -1);
+                multiLineComment = 0;
+            }
+            if (multiLineComment) {
+                line = "";
+            }
+            if (!multiLineComment && line.indexOf("//") > -1){
+                line = line.split("//")[0];
+            } 
+            if(line.indexOf("/*") > -1){
+                line = line.slice(0, line.indexOf("/*"));
+                multiLineComment = 1;
+            }
+            // finding first instance of ";" ending the module port list definition
+            if(line.indexOf(";") > -1){
+                endPoint = new Position(i, line.indexOf(";") + 1);
+                break;
+            }
+        }
+
+        var range = new Range(startPoint, endPoint);
+        this.modules[name.toString()] = doc.getText(range);
+
     }
 }

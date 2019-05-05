@@ -18,7 +18,7 @@ export function getSymbolKind(name: String): SymbolKind {
         case 'event': return SymbolKind.Event;
         case 'struct': return SymbolKind.Struct;
         case 'program':  return SymbolKind.Module;
-        case 'module':
+        case 'module': return SymbolKind.Module;
         default: return SymbolKind.Variable;
     }
     /* Unused/Free SymbolKind icons

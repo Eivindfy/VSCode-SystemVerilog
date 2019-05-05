@@ -32,7 +32,7 @@ export function activate(context: ExtensionContext) {
         settings.get('systemverilog.parallelProcessing'));
     let defProvider = new SystemVerilogDefinitionProvider(symProvider, docProvider);
     let hoverProvider = new SystemVerilogHoverProvider(symProvider, docProvider);
-    let completionItemProvider = new SystemVerilogCompletionItemProvider();
+    let completionItemProvider = new SystemVerilogCompletionItemProvider(symProvider, docProvider);
 
     context.subscriptions.push(statusBar);
     context.subscriptions.push(languages.registerDocumentSymbolProvider(selector, docProvider));

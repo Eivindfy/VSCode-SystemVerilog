@@ -4,7 +4,13 @@ import { SystemVerilogWorkspaceSymbolProvider } from './WorkspaceSymbolProvider'
 import { SystemVerilogDocumentSymbolProvider } from './DocumentSymbolProvider';
 
 export class SystemVerilogCompletionItemProvider implements vscode.CompletionItemProvider {
+    private workspaceSymProvider: SystemVerilogWorkspaceSymbolProvider;
+    private docSymProvider: SystemVerilogDocumentSymbolProvider;
 
+    constructor(workspaceSymProvider: SystemVerilogWorkspaceSymbolProvider, docSymProvider : SystemVerilogDocumentSymbolProvider) {
+        this.workspaceSymProvider = workspaceSymProvider;
+        this.docSymProvider = docSymProvider;
+    };
 
     //Entrypoint for getting completion items 
     provideCompletionItems(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken, context: vscode.CompletionContext): Promise<vscode.CompletionItem[]>{
@@ -23,69 +29,27 @@ export class SystemVerilogCompletionItemProvider implements vscode.CompletionIte
 //                    return resolve(completionItems);
                 });
             });
-
-            vscode.commands.executeCommand("vscode.executeWorkspaceSymbolProvider", lookupTerm).then((symbols: vscode.SymbolInformation[]) => {
+            
+            this.workspaceSymProvider.provideWorkspaceSymbols(lookupTerm, token, false).then((symbols: vscode.SymbolInformation[]) => {
                 symbols.forEach((value: vscode.SymbolInformation) => {
-                    vscode.workspace.openTextDocument(value.location.uri).then(doc => {
-                        console.log(value.name)
-                        console.log(value.location);
-                        completionItems.push(this.constructModuleItem(value, doc));
-                        return resolve(completionItems);
-                    });
-                });
+                    if(value.kind = vscode.SymbolKind.Module){
+                        completionItems.push(this.constructModuleItem(value));
+
+                    }
+                    console.log(value.name);
+                }, completionItems);
+                resolve(completionItems);
             });
         });
     }
 
 
     // Contruct completion item for all system verilog module items
-    constructModuleItem(symbol: vscode.SymbolInformation, document: vscode.TextDocument): vscode.CompletionItem {
-        var location = symbol.location;
-        var name = symbol.name;
-        var completionItem:vscode.CompletionItem = new vscode.CompletionItem(symbol.name, 12);
+    constructModuleItem(symbol: vscode.SymbolInformation): vscode.CompletionItem {
+        var completionItem = new vscode.CompletionItem(symbol.name, vscode.CompletionItemKind.Module);
+        completionItem.filterText = symbol.name;
+        completionItem.insertText = "tst";
 
-        var startPoint = new vscode.Position(location.range.start.line, document.lineAt(location.range.start).firstNonWhitespaceCharacterIndex);
-        
-
-        // Getting the endpoint of the module instantiation, includes the Name, the parameter list and the signal interface
-        var docSize = document.lineCount;
-        var multiLineComment = 0;
-        var endPoint = location.range.end; 
-        for( var i = location.range.end.line; i < docSize; i++){
-            var line = document.lineAt(i).text.toString();
-            // Removing comments 
-            line = line.replace(/\/\*[\s\S]*?\*\/|([\\:]|^)\/\/.*$/gm, '*/');
-            if (multiLineComment && line.indexOf("*/") > -1){
-                line = line.slice(line.indexOf("*/"), -1);
-                multiLineComment = 0;
-            }
-            if (multiLineComment) {
-                line = "";
-            }
-            if (!multiLineComment && line.indexOf("//") > -1){
-                line = line.split("//")[0];
-            } 
-            if(line.indexOf("/*") > -1){
-                line = line.slice(0, line.indexOf("/*"));
-                multiLineComment = 1;
-            }
-            // finding first instance of ";" ending the module port list definition
-            if(line.indexOf(";") > -1){
-                endPoint = new vscode.Position(i, line.indexOf(";") + 1);
-                break;
-            }
-        }
-
-        var range = new vscode.Range(startPoint, endPoint);
-        var text = document.getText(range);
-
-        completionItem.label = name;
-        completionItem.filterText = name;
-        completionItem.insertText = text;
-
-        var myMarkdownString = new vscode.MarkdownString();
-        myMarkdownString.appendCodeblock(text, "systemverilog");
-        completionItem.documentation = myMarkdownString;
 
         return completionItem;
     }
@@ -102,7 +66,8 @@ export class SystemVerilogCompletionItemProvider implements vscode.CompletionIte
 
     createModuleInsertionText(item: vscode.CompletionItem) : string {
 
-        var text = item.insertText.toString().replace(/\/\*[\s\S]*?\*\/|([\\:]|^)\/\/.*$/gm, '');
+        var rawText = this.workspaceSymProvider.modules[item.label];
+        var text = rawText.replace(/\/\*[\s\S]*?\*\/|([\\:]|^)\/\/.*$/gm, '');
         var hasParameters = 0;
         var parameters = [];
         var insertText = "";
