@@ -35,53 +35,51 @@ export function getSymbolKind(name: String): SymbolKind {
 export class SystemVerilogDocumentSymbolProvider implements DocumentSymbolProvider {
     // XXX: Does not match virtual interface instantiantion, eg virtual intf u_virtInterface;
     // XXX: Does not match input/output/inout ports, eg input logic din, ..
+    private illegalTypes = /(?!return|begin|end|else|join|fork|for|if|virtual|static|automatic|generate)/
     // TODO: Match labels with SymbolKind.Enum
     public regex: RegExp = new RegExp ([
-//    Whitespace  |   modifier 
-        ,/^(?:\s+?|\s+(?:virtual|static|automatic|rand|randc)\s+)/
-//      Illegal Symbol types
-        ,/(?!return|begin|end|else|join|fork|for|if|virtual|static|automatic|generate)/
-//      Symbol type
-        ,/([:\w]+)/
-//   whitespace |  modifier? returnType    []?      | parameterlist
-        ,/(?:\s+|(?:\s+\w+)?\s+\w+(?:\s*\[.*?\])\s+|\s*#\s*\([\s\S]*?\)\s*)/
-//    Symbol name, ignore multiple defines FIXME
+        // Potential identifier
+        ,/(?<=^\s*(?:(?:virtual|static|automatic|rand|randc|pure virtual)\s+)?)/
+        // Illegal Symbol types
+        ,this.illegalTypes
+        // Symbol type
+        ,/([:\w]+)\s+/
+        // (modifier? returnType [.*]?      | parameterlist)?
+        ,/(?:(?:\w*\s+)?\w+(?:\s*\[.*?\])?\s+|\s*#\s*\([\s\S]*?\)\s*)?/
+        // Symbol name, ignore multiple defines FIXME
+        ,this.illegalTypes
         ,/(\w+)(?:\s*,\s*\w+)*?/
-//           Port-list      |   class suffix
-        ,/(?:\s*\([\s\S]*?\)|\s+extends\s*\w+)?/
-//  End of definition
+        // Port-list | class suffix
+        ,/(?:\s*\([\s\S]*?\)|(?:\s+(?:extends|implements)\s+\w+)+)?/
+        // End of definition
         ,/\s*;/
         ].map(x => x.source).join(''), 'mg');
 
-        // FIXME: Update when VS Code upgrades to Chome 62 for PCRE Regex'es!
 
-        // public regex_block: RegExp = new RegExp ([
-        //      /(?<=\s)(function\s+\w+|task|class|module|program|package)\s+/ // Symbol type
-        //     ,/(\w+)/
-        //     ,/[\w\W.]*?/
-        //     ,/(end\1)/
-        //     ].map(x => x.source).join(''), 'mg');
-
-    public provideDocumentSymbols(document: TextDocument, token?: CancellationToken): Thenable<SymbolInformation[]> {
+    public provideDocumentSymbols(document: TextDocument, token?: CancellationToken, regex?: RegExp ): Thenable<SymbolInformation[]> {
         return new Promise((resolve, reject) => {
             var symbols = [];
             var match;
             let text = document.getText();
 
+            if (regex == undefined) {
+                regex = this.regex;
+            }
             /* 
                 Matches the regex and uses the index from the regex to find the position
             */
             do {
-                match = this.regex.exec(text);
+                match = regex.exec(text);
                 if (match) {
-                    symbols.push(new SymbolInformation(
+                    let s = new SymbolInformation(
                         match[2],
                         getSymbolKind(match[1]),
                         match[1],
                         new Location(document.uri,
-                            new Range(document.positionAt(match.index+1),
+                            new Range(document.positionAt(match.index),
                                       document.positionAt(match.index+match[0].length)
-                    ))));
+                    )))
+                    symbols.push(s);
                 }
             } while (match != null);
 

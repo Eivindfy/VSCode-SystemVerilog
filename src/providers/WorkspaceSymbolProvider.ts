@@ -1,23 +1,39 @@
+<<<<<<< HEAD
 import { SymbolInformation, Location, Range, WorkspaceSymbolProvider, CancellationToken, workspace, Uri, window, StatusBarItem, ProgressLocation, GlobPattern, SymbolKind, TextDocument, Position} from 'vscode';
 import { getSymbolKind } from './DocumentSymbolProvider';
+=======
+import { SymbolInformation, Location, Range, WorkspaceSymbolProvider, CancellationToken, workspace, Uri, window, StatusBarItem, ProgressLocation, GlobPattern} from 'vscode';
+import { getSymbolKind, SystemVerilogDocumentSymbolProvider } from './DocumentSymbolProvider';
+import { rejects } from 'assert';
+>>>>>>> eirikpre/master
 
 export class SystemVerilogWorkspaceSymbolProvider implements WorkspaceSymbolProvider {
 
-    private regex = /^\s*(?:virtual\s+(?=class))?(module|class|interface|package|program(?:\s+automatic)?)\s+(\w+)/;
     public symbols: SymbolInformation[];
     public building: Boolean = false;
     public statusbar: StatusBarItem;
+    public docProvider: SystemVerilogDocumentSymbolProvider;
     
     public NUM_FILES: number = 250;
-    public parallelProcessing = 100;
+    public parallelProcessing: number = 50;
     public exclude: GlobPattern = undefined;
     public modules: { [id: string] : String; }= {};
 
 
     
+    private regex = new RegExp ([
+        ,/(?<=^\s*(?:virtual\s+)?)/
+        ,/(module|class|interface|package|program)\s+/
+        ,/(?:automatic\s+)?/
+        ,/(\w+)/
+        ,/[\w\W.]*?/
+        ,/(end\1)/
+    ].map(x => x.source).join(''), 'mg');
 
-    constructor(statusbar: StatusBarItem, disabled?: Boolean, exclude?: GlobPattern, parallelProcessing?: number) {
+    constructor(statusbar: StatusBarItem, docProvider: SystemVerilogDocumentSymbolProvider,
+                disabled?: Boolean, exclude?: GlobPattern, parallelProcessing?: number) {
         this.statusbar = statusbar;
+        this.docProvider = docProvider;
         if (disabled) {
             this.statusbar.text = "SystemVerilog: Indexing disabled"
         } else {
@@ -37,23 +53,25 @@ export class SystemVerilogWorkspaceSymbolProvider implements WorkspaceSymbolProv
     }
 
     public provideWorkspaceSymbols(query: string, token: CancellationToken, exactMatch?: Boolean): Thenable<SymbolInformation[]> {
-        let results: SymbolInformation[] = [];
-        let query_regex = new RegExp(query, 'i');
-        return new Promise( resolve  => {
-            if (query == "") { // Show maximum 250 files for speedup
+        return new Promise( (resolve, reject) => {
+            if (query.length === 0) { // Show maximum 250 files for speedup
                 resolve(this.symbols.slice(0, 250))
             } else {
-                this.symbols.forEach( symbol => {
-                    if (exactMatch) {
-                        if (symbol.name == query) {
-                            results.push(symbol);
+                const pattern =  new RegExp (".*" + query.split("").map((c) => c).join(".*") + ".*", 'i');
+                let results: SymbolInformation[] = [];
+
+                for (let i = 0; i < this.symbols.length; i++) {
+                    let s = this.symbols[i];
+                    if (exactMatch === true) {
+                        if (s.name == query) {
+                            results.push(s);
                         }
-                    } else if (symbol.name.match(query_regex)) {
-                        results.push(symbol)
+                    } else if (s.name.match(pattern)) {
+                        results.push(s)
                     }
-                }, results);
+                }
+                resolve(results);
             }
-            resolve(results);
         });
     }
 
@@ -75,9 +93,22 @@ export class SystemVerilogWorkspaceSymbolProvider implements WorkspaceSymbolProv
                     cancelled = true;
                     break;
                 }
-                await Promise.all(subset.map( async (file) => {
-                    return this.provideSymbolsFromFile(file);
-                }));
+                await Promise.all(subset.map( uri => {
+                    return new Promise( async (resolve) => {
+                        resolve(workspace.openTextDocument(uri).then( doc => {
+                            return this.docProvider.provideDocumentSymbols(doc, token, this.regex)
+                        }))
+                    }).catch( () => {
+                        console.log("SystemVerilog: Indexing: Unable to process file: ", uri.toString());
+                        return undefined
+                    });
+                })).then( symbols_arr => {
+                    for (let i = 0; i < symbols_arr.length; i++) {
+                        if (symbols_arr[i] !== undefined) {
+                            this.symbols = this.symbols.concat(symbols_arr[i]);
+                        }
+                    }
+                });
             }
         }).then( () => {
             this.building = false;
