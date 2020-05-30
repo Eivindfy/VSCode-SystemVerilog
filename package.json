@@ -2,7 +2,7 @@
     "name": "systemverilog",
     "displayName": "SystemVerilog - Language Support",
     "description": "Language support for Verilog / SystemVerilog",
-    "version": "0.7.0",
+    "version": "0.10.9",
     "publisher": "eirikpre",
     "author": {
         "name": "Eirik Prestegårdshus",
@@ -26,7 +26,7 @@
         "url": "https://github.com/eirikpre/VSCode-SystemVerilog"
     },
     "engines": {
-        "vscode": "^1.23.0"
+        "vscode": "^1.43.0"
     },
     "categories": [
         "Programming Languages"
@@ -34,12 +34,13 @@
     "main": "./out/extension.js",
     "activationEvents": [
         "onLanguage:systemverilog",
-        "onLanguage:verilog"
+        "onLanguage:verilog",
+        "workspaceContains:**/*.{sv,v}"
     ],
     "contributes": {
         "configuration": [
             {
-                "title": "SystemVerilog",
+                "title": "SystemVerilog Language Server",
                 "properties": {
                     "systemverilog.disableIndexing": {
                         "type": "boolean",
@@ -48,13 +49,74 @@
                     },
                     "systemverilog.parallelProcessing": {
                         "type": "integer",
-                        "default": 50,
+                        "default": 10,
                         "description": "This is the number of files it should attempt to process in parallel. Processing consist of opening found files and perform matching to find symbols."
+                    },
+                    "systemverilog.includeIndexing": {
+                        "type": "array",
+                        "default": [
+                            "**/*.{sv,v,svh,vh}"
+                        ],
+                        "description": "Files being indexed(globPattern)"
                     },
                     "systemverilog.excludeIndexing": {
                         "type": "string",
-                        "default": "insert globPattern here",
-                        "description": "Exclude files from indexing by a globPattern"
+                        "default": "",
+                        "description": "Files being excluded from indexing(globPattern)"
+                    },
+                    "systemverilog.forceFastIndexing": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Force indexing to use fast regex parsing"
+                    },
+                    "systemverilog.documentSymbolsPrecision": {
+                        "type": "string",
+                        "enum": [
+                            "full",
+                            "declaration",
+                            "fast"
+                        ],
+                        "default": "full",
+                        "description": "The level of detail the parser should look for when looking for symbols"
+                    },
+                    "systemverilog.compilerType": {
+                        "type": "string",
+                        "enum": [
+                            "Verilator",
+                            "VCS"
+                        ],
+                        "default": "Verilator",
+                        "description": "Select the compiler type from the drop down list."
+                    },
+                    "systemverilog.launchConfiguration": {
+                        "type": "string",
+                        "default": "verilator --sv --lint-only --language 1800-2012 --Wall",
+                        "description": "Launch command for running the compiler"
+                    },
+                    "systemverilog.compileOnSave": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Compile SystemVerilog/Verilog files when saved."
+                    },
+                    "systemverilog.trace.server": {
+                        "type": "string",
+                        "enum": [
+                            "off",
+                            "messages",
+                            "verbose"
+                        ],
+                        "default": "off",
+                        "description": "Traces the communication between VS Code and the SystemVerilog language server"
+                    },
+                    "systemverilog.antlrVerification": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Use ANTLR parser to verify text documents when edited."
+                    },
+                    "systemverilog.verifyOnOpen": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Run ANTLR verification on all files when opened."
                     }
                 }
             }
@@ -117,21 +179,47 @@
             {
                 "command": "systemverilog.auto_instantiate",
                 "title": "SystemVerilog: Auto instantiate modules in workspace"
+            },
+            {
+                "command": "systemverilog.compile",
+                "title": "SystemVerilog: Compile the opened document"
+            }
+        ],
+        "jsonValidation": [
+            {
+                "fileMatch": "tasks.json",
+                "url": "./schemas/tasks.schema.json"
             }
         ]
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",
-        "compile": "tsc -p ./",
+        "compile": "npm run antlr4ts_compile && tsc -p ./",
         "watch": "tsc -watch -p ./",
-        "postinstall": "node ./node_modules/vscode/bin/install",
-        "test": "npm run compile && node ./node_modules/vscode/bin/test"
+        "test": "npm run compile && node ./out/test/runTest.js",
+        "coverage": "nyc npm test",
+        "antlr4ts_compile": "antlr4ts -visitor ./src/compiling/ANTLR/grammar/SystemVerilog.g4 -o ./src/compiling/ANTLR/grammar/build"
     },
     "devDependencies": {
-        "@types/mocha": "^5.2.6",
-        "@types/node": "^10.14.7",
+        "@types/glob": "^7.1.1",
+        "@types/mocha": "^5.2.7",
+        "@types/node": "^12.12.34",
+        "@types/vscode": "^1.43.0",
+        "antlr4ts-cli": "^0.5.0-alpha.3",
         "languages": "0.1.3",
-        "typescript": "^3.4.5",
-        "vscode": "^1.1.34"
+        "mocha": "^6.2.3",
+        "mocha-multi-reporters": "^1.1.7",
+        "nyc": "^14.1.1",
+        "typescript": "^3.8.3",
+        "vscode-test": "^1.3.0"
+    },
+    "dependencies": {
+        "antlr4": "^4.8.0",
+        "antlr4ts": "^0.5.0-alpha.3",
+        "child_process": "^1.0.2",
+        "glob": "^7.1.6",
+        "uri-js": "^4.2.2",
+        "vscode-languageclient": "^5.2.1",
+        "vscode-languageserver": "^5.2.1"
     }
 }

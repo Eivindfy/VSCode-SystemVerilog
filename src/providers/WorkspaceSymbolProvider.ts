@@ -1,160 +1,87 @@
-import { SymbolInformation, Location, Range, WorkspaceSymbolProvider, CancellationToken, workspace, Uri, window, StatusBarItem, ProgressLocation, GlobPattern, SymbolKind, TextDocument, Position} from 'vscode';
-import { getSymbolKind, SystemVerilogDocumentSymbolProvider } from './DocumentSymbolProvider';
-import { rejects } from 'assert';
+import { WorkspaceSymbolProvider, CancellationToken } from 'vscode';
+import { SystemVerilogIndexer } from '../indexer';
+import { getSymbolKind, SystemVerilogSymbol } from '../symbol';
+
 
 export class SystemVerilogWorkspaceSymbolProvider implements WorkspaceSymbolProvider {
-
-    public symbols: SymbolInformation[];
-    public moduleContainers: Map<string, string>;
-    public building: Boolean = false;
-    public statusbar: StatusBarItem;
-    public docProvider: SystemVerilogDocumentSymbolProvider;
-
+    /*
+    * this.symbols: filePath => Array<SystemVerilogSymbol>
+    * each entry's key represents a file path,
+    * and the entry's value is a list of the symbols that exist in the file
+    */
+    public indexer: SystemVerilogIndexer;
     public NUM_FILES: number = 250;
-    public parallelProcessing: number = 50;
-    public exclude: GlobPattern = undefined;
-    public modules: { [id: string] : String; }= {};
 
-
-    
-    private regex = new RegExp ([
-        ,/(?<=^\s*(?:virtual\s+)?)/
-        ,/(module|class|interface|package|program)\s+/
-        ,/(?:automatic\s+)?/
-        ,/(\w+)/
-        ,/[\w\W.]*?/
-        ,/(end\1)/
-    ].map(x => x.source).join(''), 'mg');
-
-    constructor(statusbar: StatusBarItem, docProvider: SystemVerilogDocumentSymbolProvider,
-        disabled?: Boolean, exclude?: GlobPattern, parallelProcessing?: number) {
-        this.statusbar = statusbar;
-        this.docProvider = docProvider;
-        this.moduleContainers = new Map<string, string>();
-        if (disabled) {
-            this.statusbar.text = "SystemVerilog: Indexing disabled"
-        } else {
-            if (exclude != "insert globPattern here") {
-                this.exclude = exclude;
-            }
-            if (parallelProcessing) {
-                this.parallelProcessing = parallelProcessing;
-            }
-            this.statusbar.text = "SystemVerilog: Indexing";
-            this.build_index().then(res => this.statusbar.text = res);
-        }
+    constructor(indexer: SystemVerilogIndexer) {
+        this.indexer = indexer;
     };
 
-    public dispose() {
-        delete this.symbols
-    }
-
-    /** 
-        Queries a symbol from this.symbols, performs an exact match if exactMatch is set to true,
+    /**
+        Queries a symbol from `this.symbols`, performs an exact match if `exactMatch` is set to true,
         and a partial match if it's not passed or set to false.
 
-        @param query the symbol's name
+        @param query the symbol's name, if it is prepended with a ¤ it signifies an exact match
         @param token the CancellationToken
-        @param exactMatch whether to perform an exact or a partial match
-        @return an array of matching SymbolInformation 
+        @return an array of matching SystemVerilogSymbol
     */
-    public provideWorkspaceSymbols(query: string, token: CancellationToken, exactMatch?: Boolean): Thenable <SymbolInformation[]> {
+    public provideWorkspaceSymbols(query: string, token: CancellationToken): Thenable<Array<SystemVerilogSymbol>> {
         return new Promise((resolve, reject) => {
-            if (query.length === 0) { // Show maximum 250 files for speedup
-                resolve(this.symbols.slice(0, 250))
+            if (query==undefined || query.length === 0) {
+                resolve(this.indexer.mostRecentSymbols);
             } else {
                 const pattern = new RegExp(".*" + query.replace(" ", "").split("").map((c) => c).join(".*") + ".*", 'i');
-                let results: SymbolInformation[] = [];
-
-                for (let i = 0; i < this.symbols.length; i++) {
-                    let s = this.symbols[i];
-                    if (exactMatch === true) {
-                        if (s.name == query) {
-                            results.push(s);
-                        }
-                    } else if (s.name.match(pattern)) {
-                        results.push(s)
-                    }
+                let results = new Array<SystemVerilogSymbol>();
+                let exactMatch: Boolean = false;
+                if (query.startsWith("¤")) {
+                    exactMatch = true
+                    query = query.substr(1)
                 }
+                this.indexer.symbols.forEach(list => {
+                    list.forEach(symbol => {
+                        if (exactMatch === true) {
+                            if (symbol.name == query) {
+                                results.push(symbol);
+                            }
+                        }
+                        else if (symbol.name.match(pattern)) {
+                            results.push(symbol)
+                        }
+                    });
+                });
+
+                this.indexer.updateMostRecentSymbols(results.slice(0)); //pass a shallow copy of the array
                 resolve(results);
             }
         });
     }
 
-    /**  
-        Stores the module's container to this.moduleContainers.
-
-        @param symbolInfo the SymbolInformation object
+    /**
+        Queries a `module` with a given name from `this.symbols`, performs an exact match if `exactMatch` is set to true,
+        and a partial match if it's not passed or set to false.
+        @param query the symbol's name
+        @return the module's SystemVerilogSymbol
     */
-    public storeModuleContainer(symbolInfo: SymbolInformation): void {
-        let uri = symbolInfo.location.uri;
-        let range = symbolInfo.location.range;
-        try {
-            workspace.openTextDocument(uri).then(doc => {
-                let container = doc.getText(range);
-                this.moduleContainers.set(symbolInfo.name, container);
-            });
-        } catch (error) {
-            console.log(error);
-            this.moduleContainers.set(symbolInfo.name, undefined);
-        }
-    }
-
-    /**  
-        Scans the workspace for SystemVerilog and Verilog files for symbols,
-        and saves the symbols as SymbolInformation objects to this.symbols.
-
-        @return status message when indexing is successful or failed with an error.
-    */
-    public async build_index(): Promise <any> {
-        var cancelled = false;
-        this.building = true;
-
-        return await window.withProgress({
-            location: ProgressLocation.Notification,
-            title: "SystemVerilog Indexing...",
-            cancellable: true
-        }, async (progress, token) => {
-            this.symbols = new Array <SymbolInformation> ();
-            let uris = await Promise.resolve(workspace.findFiles('**/*.{sv,v,svh,vh}', this.exclude, undefined, token));
-
-            for (var filenr = 0; filenr < uris.length; filenr += this.parallelProcessing) {
-                let subset = uris.slice(filenr, filenr + this.parallelProcessing)
-                if (token.isCancellationRequested) {
-                    cancelled = true;
-                    break;
-                }
-                await Promise.all(subset.map(uri => {
-                    return new Promise(async (resolve) => {
-                        resolve(workspace.openTextDocument(uri).then(doc => {
-                            return this.docProvider.provideDocumentSymbols(doc, token, this.regex)
-                        }))
-                    }).catch(() => {
-                        console.log("SystemVerilog: Indexing: Unable to process file: ", uri.toString());
-                        return undefined
-                    });
-                })).then((symbols_arr: Array <SymbolInformation> ) => {
-                    for (let i = 0; i < symbols_arr.length; i++) {
-                        if (symbols_arr[i] !== undefined) {
-                            let symbolInfo = symbols_arr[i][0];
-                            this.symbols = this.symbols.concat(symbols_arr[i]);
-
-                            //if it's a module, store the container
-                            if(symbolInfo && symbolInfo.containerName == "module"){
-                                this.storeModuleContainer(symbolInfo);
-                            }
-                        }
+    public provideWorkspaceModule(query: string): SystemVerilogSymbol {
+        if (query.length === 0) {
+            return undefined;
+        } else {
+            let symbolInfo = undefined;
+            this.indexer.symbols.forEach(list => {
+                list.forEach(symbol => {
+                    if (symbol.name == query && symbol.kind == getSymbolKind("module")) {
+                        symbolInfo = symbol;
+                        return false;
                     }
                 });
-            }
-        }).then(() => {
-            this.building = false;
-            if (cancelled) {
-                return "SystemVerilog: Indexing cancelled";
-            } else {
-                return 'SystemVerilog: ' + this.symbols.length + ' indexed objects'
-            }
-        });
+
+                if (symbolInfo) {
+                    return false;
+                }
+            });
+
+            this.indexer.updateMostRecentSymbols([symbolInfo]);
+            return symbolInfo;
+        }
     }
 
     private async provideSymbolsFromFile(uri: Uri): Promise<any> {

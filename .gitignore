@@ -4,3 +4,5 @@ node_modules
 .vscode-test/
 vsc-extension-quickstart.md
 packages
+results.xml
+**/.antlr

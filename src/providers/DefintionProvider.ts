@@ -1,65 +1,119 @@
-import * as vscode from 'vscode';
-import { SystemVerilogWorkspaceSymbolProvider } from './WorkspaceSymbolProvider';
-import { SystemVerilogDocumentSymbolProvider } from './DocumentSymbolProvider';
+import { DefinitionProvider, TextDocument, Position, CancellationToken, Definition, Range, Location, workspace, commands, DocumentSymbol, Uri, SymbolInformation } from 'vscode';
 
-export class SystemVerilogDefinitionProvider implements vscode.DefinitionProvider {
+export class SystemVerilogDefinitionProvider implements DefinitionProvider {
 
-    private workspaceSymProvider : SystemVerilogWorkspaceSymbolProvider;
-    private docSymProvider       : SystemVerilogDocumentSymbolProvider;
-
-    // Strings used in regex'es
-    // private regex_module = '$\\s*word\\s*(';
-    private regex_port = '\\.word\\s*\\(';
-
-    constructor(workspaceSymProvider: SystemVerilogWorkspaceSymbolProvider, docSymProvider : SystemVerilogDocumentSymbolProvider) {
-        this.workspaceSymProvider = workspaceSymProvider;
-        this.docSymProvider = docSymProvider;
-    };
-
-    public provideDefinition(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken): Promise<vscode.Definition> {
-        return new Promise ( async (resolve, reject) => {
+    public provideDefinition(document: TextDocument, position: Position, token: CancellationToken): Promise<Definition> {
+        return new Promise<Definition>( async (resolve, reject) => {
             let range = document.getWordRangeAtPosition(position);
             let line = document.lineAt(position.line).text;
             let word = document.getText(range);
+            let results: Location[] = [];
 
             if (!range) {
-                reject();
+                return results
             }
 
-            // Check for port
-            else if (line.match(this.regex_port.replace('word', word))) {
-                let container = moduleFromPort(document, range)
+            // Port
+            await findPortInModule();
 
-                resolve(Promise.resolve(this.workspaceSymProvider.provideWorkspaceSymbols(container, token, true).then( res => {
-                    return Promise.all( res.map(x => findPortLocation(x, word)));
-                }).then( arrWithUndefined => {
-                    return clean(arrWithUndefined, undefined)
-                })));
+            // Package
+            await findInPackage();
+
+            // Lookup all symbols in the current document
+            if (results.length == 0) {
+                await commands.executeCommand("vscode.executeDocumentSymbolProvider", document.uri, word)
+                    .then( (symbols : DocumentSymbol[]) => {
+                        getDocumentSymbols(results, symbols, word, document.uri);
+                    }, ( reason: any ) => {
+                        console.log(reason);
+                    });
             }
 
-            else {
-                // Lookup all symbols in the current document
-                await this.docSymProvider.provideDocumentSymbols(document).then(symbols => {
-                    symbols.forEach(x => {
-                        if(x.name === word) {
-                            resolve(x.location);
+            // Look up all indexed symbols
+            if (results.length == 0) {
+                await commands.executeCommand("vscode.executeWorkspaceSymbolProvider", "¤"+word, token)
+                    .then( (res: SymbolInformation[]) => {
+                        if (res.length !== 0) {
+                            res.map( x => results.push(x.location) );
                         }
                     });
-                });
-
-                await this.workspaceSymProvider.provideWorkspaceSymbols(word, token, true).then( res => {
-                    if (res.length == 0) {
-                        reject();
-                    }
-                    resolve(res.map( x => x.location ));
-                });
             }
-        });
+
+            resolve(results);
+
+
+            async function findInPackage() {
+                const regex_package = '\\b(\\w+)\\s*::\\s*(word)';
+                const match_package = line.match(regex_package.replace('word', word));
+                if (match_package && line.indexOf(word, match_package.index) == range.start.character) {
+                    await commands.executeCommand("vscode.executeWorkspaceSymbolProvider", "¤"+match_package[1], token)
+                        .then( (ws_symbols: SymbolInformation[]) => {
+                            if (ws_symbols.length && ws_symbols[0].location) {
+                                    return ws_symbols[0].location.uri;
+                            }})
+                        .then( async (uri) => {
+                            if (uri) {
+                                await commands.executeCommand("vscode.executeDocumentSymbolProvider", uri, word)
+                                    .then((symbols) => {
+                                        getDocumentSymbols(results, symbols, word, uri, match_package[1]);
+                                    });
+                            }
+                    });
+                }
+            }
+
+            async function findPortInModule() {
+                const regex_port = '\\.word\\s*\\(';
+                const match_port = line.match(regex_port.replace('word', word));
+                if (match_port && match_port.index === range.start.character-1) {
+                    let container = moduleFromPort(document, range)
+                    if (container) {
+                        await commands.executeCommand("vscode.executeWorkspaceSymbolProvider", "¤"+container)
+                            .then( (res: SymbolInformation[]) => {
+                                return Promise.all( res.map( async (x) => {
+                                    return await commands.executeCommand("vscode.executeDocumentSymbolProvider", x.location.uri, word)
+                                        .then( (symbols) => {
+                                            getDocumentSymbols(results, symbols, word, x.location.uri, container)
+                                        });
+                                }));
+                            });
+                    }
+                }
+            }
+        })
     }
 }
 
+
+// Retrieves locations from the hierarchical DocumentSymbols
+function getDocumentSymbols(results: Location[], entries, word: string, uri: Uri, containerName?: string): void {
+    if (!entries) { return }
+    for (let entry of entries) {
+        if (entry.name === word) {
+            if (containerName) {
+                if (entry.containerName === containerName) {
+                    results.push({
+                        uri: uri,
+                        range: entry.range,
+                    });
+                }
+            } else {
+                results.push({
+                    uri: uri,
+                    range: entry.range,
+                });
+            }
+        }
+        if (entry.children.length > 0) {
+            getDocumentSymbols(results, entry.children, word, uri);
+        }
+    }
+}
+
+
+
 export function moduleFromPort(document, range): string {
-    let text = document.getText(new vscode.Range(new vscode.Position(0,0), range.end))
+    let text = document.getText(new Range(new Position(0,0), range.end))
     let depthParathesis = 0;
     let i = 0;
 
@@ -68,7 +122,7 @@ export function moduleFromPort(document, range): string {
             depthParathesis++;
         else if (text[i] == '(')
             depthParathesis--;
-        
+
         if (depthParathesis == -1) {
             let match_param = text.slice(0, i).match(/(\w+)\s*#\s*$/);
             let match_simple = text.slice(0, i).match(/(\w+)\s+(\w+)\s*$/);
@@ -78,27 +132,4 @@ export function moduleFromPort(document, range): string {
                 return match_simple[1]
         }
     }
-}
-
-
-function findPortLocation(symbol: vscode.SymbolInformation, port:string): Thenable<vscode.Location> {
-    return vscode.workspace.openTextDocument(symbol.location.uri).then( doc => {
-
-        for (let i = symbol.location.range.start.line; i<doc.lineCount; i++) {
-            let line = doc.lineAt(i).text;
-            if (line.match("\\bword\\b".replace('word', port))) {
-                return new vscode.Location(symbol.location.uri, new vscode.Position(i, line.indexOf(port)));
-            }
-        }
-    });
-}
-
-function clean(arr: Array<any>, deleteValue): Array<any> {
-    for (var i = 0; i < arr.length; i++) {
-      if (arr[i] == deleteValue) {
-        arr.splice(i, 1);
-        i--;
-      }
-    }
-    return arr;
 }

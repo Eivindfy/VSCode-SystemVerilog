@@ -9,7 +9,6 @@
         {   "include": "#comment"       },
         {   "include": "#strings"       },
         {   "include": "#support"       },
-        {   "include": "#variables"     },
         {   "include": "#keywords"      },
         {   "include": "#macros"        },
         {   "include": "#constant"      },
@@ -68,8 +67,8 @@
         },
         "strings": {
             "name": "string.quoted.double.systemverilog",
-            "begin": "\"",
-            "end": "\"",
+            "begin": "`?\"",
+            "end": "\"`?",
             "patterns": [
                 {   "include": "#FIXME-TODO-XXX"    },
                 {
@@ -115,7 +114,7 @@
                     "patterns": [
                         {
                             "name": "meta.inst.module-simple.systemverilog",
-                            "begin": "(?:^\\s*|^\\s*(\\w+)::)(?!module|function|task|interface|clocking|property|primitive|program|else|if|for|return|begin|end|case)(\\w+)\\s+(\\w+)\\s*(?:\\[(.*)\\]\\s*)?(?=\\()",
+                            "begin": "(?:^\\s*|^\\s*(\\w+)::)(?!module|function|task|interface|clocking|property|primitive|program|else|if|for|return|begin|end|case|unique)(\\w+)\\s+(\\w+)\\s*(?:\\[(.*)\\]\\s*)?(?=\\()",
                             "beginCaptures": {
                                 "1": { "name": "entity.name.type.package.systemverilog" },
                                 "2": { "name": "entity.name.class.module.systemverilog" },
@@ -280,7 +279,7 @@
                     "begin": "\\/\\*",
                     "end": "\\*\\/",
                     "patterns": [{  "include": "#FIXME-TODO-XXX"    }]
-                }   
+                }
             ]
         },
         "FIXME-TODO-XXX": {
@@ -303,10 +302,10 @@
                 },
                 {
                     "name": "constant.numeric.decimal.systemverilog",
-                    "match": "\\b([\\d\\.]+)((f|p|n|u|m)?s)?\\b"
+                    "match": "\\b(\\d[\\d\\.]+)((f|p|n|u|m)?s)?\\b"
                 },
-                { 
-                    "name": "constant.numeric.parameter.uppercase.systemverilog", 
+                {
+                    "name": "constant.numeric.parameter.uppercase.systemverilog",
                     "match": "\\b(?<!\\.)([A-Z_0-9]+)(?!\\.)\\b"
                 }
             ]
@@ -335,22 +334,6 @@
                             "match": "\\w+"
                         }
                     ]
-                }
-            ]
-        },
-        "variables": {
-            "patterns": [
-                {
-                    "name": "variable.language.systemverilog",
-                    "match": "\\b(this)(?=\\.)"
-                },
-                {
-                    "name": "variable.name.systemverilog",
-                    "match": "(?=\\s|\\.| )(?!`)\\w+(?=\\.)"
-                },
-                {
-                    "name": "variable.name.systemverilog",
-                    "match": "(?=\\.)\\w+"
                 }
             ]
         },
@@ -423,6 +406,10 @@
                 {
                     "name": "keyword.other.extra.LRM-AnnexB.B-1-6.systemverilog",
                     "match": "\\b(time|timeprecision|timeunit|tran|tranif0|tranif1|tri|tri0|tri1|triand|trior|trireg|type|typedef|union|unique|unique0|unsigned|until|until_with|untyped|use|uwire|var|vectored|virtual|void|wait|wait_order|wand|weak|weak0|weak1|while|wildcard|wire|with|within|wor|xnor|xor)\\b"
+                },
+                {
+                    "name": "keyword.other.extra.custom.systemverilog",
+                    "match": "\\b(mailbox)\\b"
                 }
             ]
         }
